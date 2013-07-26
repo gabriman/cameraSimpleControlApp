@@ -22,7 +22,7 @@ function varargout = simpleControlApp(varargin)
 
 % Edit the above text to modify the response to help simpleControlApp
 
-% Last Modified by GUIDE v2.5 23-Jul-2013 15:26:28
+% Last Modified by GUIDE v2.5 26-Jul-2013 15:34:20
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -85,26 +85,25 @@ function pushbuttonInit_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 if handles.initialized == false
-    [handles.options,handles.XMLobj] = camControl_Init;
-    %Aqui esperar a comprobar que se haya iniciado bien
-    handles.initialized = true;
-    set(handles.pushbuttonGetValues,'Enable','on')
-    set(handles.pushbuttonChange,'Enable','on')
-    set(handles.pushbuttonTake,'Enable','on')
-    set(handles.pushbuttonInit,'Enable','off')
-    set(handles.pushbuttonClose,'Enable','on')
-   
+    [handles.options,handles.XMLobj] = camControl_init;
+    pause(2);
     
-else
-    handles.initialized = false;
-    set(handles.pushbuttonGetValues,'Enable','off')
-    set(handles.pushbuttonChange,'Enable','off')
-    set(handles.pushbuttonTake,'Enable','off')
-    set(handles.pushbuttonInit,'Enable','on')
-    set(handles.pushbuttonClose,'Enable','off')
+    [code,message] = camControl_initCheck(handles.options);
+    if strcmp(code,'0')
+        handles.camera = message;
+        handles.initialized = true;
+        set(handles.pushbuttonGetValues,'Enable','on')
+        set(handles.pushbuttonChange,'Enable','on')
+        set(handles.pushbuttonTake,'Enable','on')
+        set(handles.pushbuttonInit,'Enable','off')
+        set(handles.pushbuttonClose,'Enable','on')
+        handles.target = 1; %camera
+    else
+        handles.initialized = false;
+        errordlg(char(message));
+    end
+
 end
-
-
 
 
 guidata(hObject, handles);
@@ -119,15 +118,37 @@ function pushbuttonTake_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 
+
+pathDirec = get(handles.editPath,'String')
+index = get(handles.popupmenuTarget,'value');
+if handles.target ~= index
+    handles.target = index;
+    if index == 1
+        camControl_changeTargetPhotos(handles.XMLobj,'camera',char(pathDirec));
+    elseif index == 2
+        camControl_changeTargetPhotos(handles.XMLobj,'host',char(pathDirec));
+    elseif index == 3
+        camControl_changeTargetPhotos(handles.XMLobj,'both',char(pathDirec));
+    end
+end
+
+if handles.target ~= 1
+    actualPhotos = camControl_getPhotosActual(pathDirec);
+end
+
 camControl_take(handles.XMLobj);
 [handles.XMLobj commands] = camControl_execute(handles.options,handles.XMLobj);
 
+if handles.target ~= 1
+    new = camControl_getPhotosNew(pathDirec,actualPhotos)
+    pathDirec = strcat(pathDirec,'\')
+    photo = strcat(pathDirec,new)
 
-a = ('C:\Users\Gabry\Desktop\photosCanon\2013-07-22_15-38-41_IMG_0001.JPG');
-pic2 = imread(a);
-imagesc(pic2,'Parent',handles.axesImg);
-axis off;
-
+    a = (char(photo));
+    pic2 = imread(a);
+    imagesc(pic2,'Parent',handles.axesImg);
+    axis off;
+end
 guidata(hObject, handles);
 
 
@@ -256,6 +277,16 @@ function pushbuttonClose_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 camControl_close(handles.XMLobj);
 camControl_execute(handles.options,handles.XMLobj)
+
+handles.initialized = false;
+set(handles.pushbuttonGetValues,'Enable','off')
+set(handles.pushbuttonChange,'Enable','off')
+set(handles.pushbuttonTake,'Enable','off')
+set(handles.pushbuttonInit,'Enable','on')
+set(handles.pushbuttonClose,'Enable','off')
+
+
+
 guidata(hObject, handles);
 
 
@@ -298,3 +329,117 @@ function axesImg_CreateFcn(hObject, eventdata, handles)
  axis off;
  
 % Hint: place code in OpeningFcn to populate axesImg
+
+
+
+function edit1_Callback(hObject, eventdata, handles)
+% hObject    handle to edit1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of edit1 as text
+%        str2double(get(hObject,'String')) returns contents of edit1 as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function edit1_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to edit1 (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes on button press in popupmenuTarget.
+function popupmenuTarget_Callback(hObject, eventdata, handles)
+% hObject    handle to popupmenuTarget (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+index = get(handles.popupmenuTarget,'value');
+
+if index == 1
+    set(handles.editPath,'visible','off')
+    set(handles.pushbuttonDir,'visible','off')
+else
+    set(handles.editPath,'visible','on')
+    set(handles.pushbuttonDir,'visible','on')
+end
+
+guidata(hObject, handles);
+
+
+
+
+
+function editPath_Callback(hObject, eventdata, handles)
+% hObject    handle to editPath (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+% Hints: get(hObject,'String') returns contents of editPath as text
+%        str2double(get(hObject,'String')) returns contents of editPath as a double
+
+
+% --- Executes during object creation, after setting all properties.
+function editPath_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to editPath (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: edit controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+set(hObject,'visible','off')
+handles.photosDir = '';
+guidata(hObject, handles);
+
+
+
+% --- Executes on button press in pushbuttonDir.
+function pushbuttonDir_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonDir (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+handles.photosDir = uigetdir;
+set(handles.editPath,'String',handles.photosDir)
+
+guidata(hObject, handles);
+
+
+
+
+
+% --- Executes during object creation, after setting all properties.
+function popupmenuTarget_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to popupmenuTarget (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+% Hint: popupmenu controls usually have a white background on Windows.
+%       See ISPC and COMPUTER.
+if ispc && isequal(get(hObject,'BackgroundColor'), get(0,'defaultUicontrolBackgroundColor'))
+    set(hObject,'BackgroundColor','white');
+end
+
+
+% --- Executes during object creation, after setting all properties.
+function pushbuttonDir_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to pushbuttonDir (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
+
+set(hObject,'visible','off')
+
+
+% --- Executes during object creation, after setting all properties.
+function pushbuttonTake_CreateFcn(hObject, eventdata, handles)
+% hObject    handle to pushbuttonTake (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    empty - handles not created until after all CreateFcns called
