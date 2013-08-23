@@ -22,7 +22,7 @@ function varargout = simpleControlApp(varargin)
 
 % Edit the above text to modify the response to help simpleControlApp
 
-% Last Modified by GUIDE v2.5 26-Jul-2013 15:34:20
+% Last Modified by GUIDE v2.5 15-Aug-2013 18:21:44
 
 % Begin initialization code - DO NOT EDIT
 gui_Singleton = 1;
@@ -85,8 +85,29 @@ function pushbuttonInit_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 if handles.initialized == false
-    [handles.options,handles.XMLobj] = camControl_init;
+    
+    % ---  Load/chech program folder ---
+    try
+        load('programFolder.mat')
+        if ~exist('programFolder','var')
+            errordlg(char('Program Folder is not setted. Click "Config" button'));
+            return
+        end
+    catch ME
+        errordlg(char('Program Folder is not setted. Click "Config" button'));
+        return
+    end
+    % ----------------------------------
+    
+    try
+    [handles.options,handles.XMLobj] = camControl_init(programFolder);
     pause(2);
+    catch ME
+        errordlg(char('Program Folder incorrect. Please, config it un "Config" button'));
+        return
+    end
+    
+    handles.imgLoading = imread('gif-loading.jpg');
     
     [code,message] = camControl_initCheck(handles.options);
     if strcmp(code,'0')
@@ -98,6 +119,39 @@ if handles.initialized == false
         set(handles.pushbuttonInit,'Enable','off')
         set(handles.pushbuttonClose,'Enable','on')
         handles.target = 1; %camera
+        
+        %--- If is a Nikon camera, "host" will be setted and pathOutput to
+        %execution path
+        if strcmp(handles.camera,'nikon')
+            set(handles.popupmenuTarget,'value',2);
+            set(handles.popupmenuTarget,'enable','off');
+            
+            set(handles.editPath,'visible','on')
+            set(handles.editPath,'enable','off');
+            set(handles.editPath,'String',programFolder);
+            
+            set(handles.pushbuttonDir,'visible','on')
+            set(handles.pushbuttonDir,'enable','off')
+        else
+            set(handles.popupmenuTarget,'value',1);
+            set(handles.popupmenuTarget,'enable','on');
+            
+            set(handles.editPath,'visible','on')
+            set(handles.editPath,'enable','on');
+            set(handles.editPath,'String','');
+            
+            set(handles.pushbuttonDir,'visible','on')
+            set(handles.pushbuttonDir,'enable','on')
+        end
+        %---
+        
+        handles.numImages = 0; %Number of photos taked
+        handles.actualImg = 0; %photo showed
+               
+        a = (char('not_available.jpg'));
+        pic2 = imread(a);
+        imagesc(pic2,'Parent',handles.axesImg);
+        axis off;
     else
         handles.initialized = false;
         errordlg(char(message));
@@ -119,7 +173,9 @@ function pushbuttonTake_Callback(hObject, eventdata, handles)
 % handles    structure with handles and user data (see GUIDATA)
 
 
-pathDirec = get(handles.editPath,'String')
+pathDirec = get(handles.editPath,'String');
+
+%Only avaliable in Canon, without use un Nikon
 index = get(handles.popupmenuTarget,'value');
 if handles.target ~= index
     handles.target = index;
@@ -132,22 +188,54 @@ if handles.target ~= index
     end
 end
 
+
 if handles.target ~= 1
+    if exist(pathDirec,'dir')~=7     %If directory doesnt exists
+        errordlg('Photos directory doesnt exist');
+        return
+    end
     actualPhotos = camControl_getPhotosActual(pathDirec);
 end
 
+%Change values before take
+list = strtrim(get(handles.popupmenuIso,'String'));
+index = get(handles.popupmenuIso,'value');
+newIso = strtrim(list(index,:));
+
+list = strtrim(get(handles.popupmenuAperture,'String'));
+index = get(handles.popupmenuAperture,'value');
+newApe = strtrim(list(index,:));
+
+list = strtrim(get(handles.popupmenuSpeed,'String'));
+index = get(handles.popupmenuSpeed,'value');
+newSpeed = strtrim(list(index,:));
+
+
+camControl_changeSpeed(handles.XMLobj, newSpeed);
+camControl_changeAperture(handles.XMLobj, newApe);
+camControl_changeIso(handles.XMLobj, newIso);
+%end change values
+
+
 camControl_take(handles.XMLobj);
+
+
 [handles.XMLobj commands] = camControl_execute(handles.options,handles.XMLobj);
 
-if handles.target ~= 1
-    new = camControl_getPhotosNew(pathDirec,actualPhotos)
-    pathDirec = strcat(pathDirec,'\')
-    photo = strcat(pathDirec,new)
+[code,m,c,p] = camControl_parser_getLastCommand(commands);
 
-    a = (char(photo));
-    pic2 = imread(a);
-    imagesc(pic2,'Parent',handles.axesImg);
-    axis off;
+if str2num(code) >= 0    %If was no error in the last command (take command or another command with error)
+    if handles.target ~= 1
+        new = camControl_getPhotosNew(pathDirec,actualPhotos)
+        pathDirec = strcat(pathDirec,'\');
+        photo = strcat(pathDirec,new)
+
+        handles.imgArray(handles.numImages+1,:) = (char(photo));
+        handles.numImages = handles.numImages + 1;
+        handles.actualImg = handles.numImages;
+        
+        updatePhoto(hObject,eventdata,handles);
+    end
 end
 guidata(hObject, handles);
 
@@ -244,9 +332,9 @@ camControl_getListSpeed(handles.XMLobj);
 iso = camControl_parser_getIso(handles.commands);
 aper = camControl_parser_getAperture(handles.commands);
 speed = camControl_parser_getSpeed(handles.commands);
-set(handles.textIso,'String',iso)
-set(handles.textAperture,'String',aper)
-set(handles.textSpeed,'String',speed)
+%set(handles.textIso,'String',iso)
+%set(handles.textAperture,'String',aper)
+%set(handles.textSpeed,'String',speed)
 
 isoList = camControl_parser_getListIso(handles.commands);
 apertureList = camControl_parser_getListAperture(handles.commands);
@@ -276,15 +364,18 @@ function pushbuttonClose_Callback(hObject, eventdata, handles)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    structure with handles and user data (see GUIDATA)
 camControl_close(handles.XMLobj);
-camControl_execute(handles.options,handles.XMLobj)
+[handles.XMLobj,handles.commands] = camControl_execute(handles.options,handles.XMLobj);
+if strcmp(handles.commands(1).code,'0')
+    errordlg('Camera closed successfully');
 
-handles.initialized = false;
-set(handles.pushbuttonGetValues,'Enable','off')
-set(handles.pushbuttonChange,'Enable','off')
-set(handles.pushbuttonTake,'Enable','off')
-set(handles.pushbuttonInit,'Enable','on')
-set(handles.pushbuttonClose,'Enable','off')
+    handles.initialized = false;
+    set(handles.pushbuttonGetValues,'Enable','off')
+    set(handles.pushbuttonChange,'Enable','off')
+    set(handles.pushbuttonTake,'Enable','off')
+    set(handles.pushbuttonInit,'Enable','on')
+    set(handles.pushbuttonClose,'Enable','off')
 
+end
 
 
 guidata(hObject, handles);
@@ -443,3 +534,85 @@ function pushbuttonTake_CreateFcn(hObject, eventdata, handles)
 % hObject    handle to pushbuttonTake (see GCBO)
 % eventdata  reserved - to be defined in a future version of MATLAB
 % handles    empty - handles not created until after all CreateFcns called
+
+
+% --- Executes on button press in pushbuttonPrev.
+function pushbuttonPrev_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonPrev (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+if handles.actualImg > 1
+    handles.actualImg = handles.actualImg - 1 ; %photo showed
+        
+	updatePhoto(hObject,eventdata,handles);
+end
+guidata(hObject, handles);
+
+
+% --- Executes on button press in pushbuttonNext.
+function pushbuttonNext_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonNext (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+if handles.actualImg < handles.numImages
+    handles.actualImg = handles.actualImg + 1 ; %photo showed
+    
+	updatePhoto(hObject,eventdata,handles);
+end
+guidata(hObject, handles);
+
+
+
+
+% --- Executes on button press in pushbuttonWindow.
+function pushbuttonWindow_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonWindow (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+figure
+imshow(handles.imgArray(handles.actualImg,:));
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function updatePhoto(hObject, eventdata, handles)
+% hObject    handle to pushbuttonNext (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+photo = handles.imgArray(handles.actualImg,:);
+pic2 = imread(photo);
+imagesc(pic2,'Parent',handles.axesImg);
+axis off;
+
+count = strcat(num2str(handles.actualImg),' / ');
+count = strcat(count,num2str(handles.numImages));
+set(handles.textCount,'String',count)
+set(handles.textImgPath,'String',photo)
+
+
+guidata(hObject, handles);
+
+
+% --- Executes on button press in pushbuttonConfig.
+function pushbuttonConfig_Callback(hObject, eventdata, handles)
+% hObject    handle to pushbuttonConfig (see GCBO)
+% eventdata  reserved - to be defined in a future version of MATLAB
+% handles    structure with handles and user data (see GUIDATA)
+
+programFolder = uigetdir;
+save('programFolder.mat','programFolder')
+
+guidata(hObject, handles);
